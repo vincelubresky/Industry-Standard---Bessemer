@@ -164,6 +164,9 @@ main{padding:24px 28px;max-width:1100px;margin:0 auto}
     <div class="tab active" onclick="showPage('counts',this)">Meal Counts</div>
     <div class="tab" onclick="showPage('cost',this)">Meal Cost</div>
     <div class="tab" onclick="showPage('inventory',this)">Inventory</div>
+    <div class="tab" onclick="showPage('cafe-inventory',this)">Cafe Inventory</div>
+    <div class="tab" onclick="showPage('menus',this)">Menus</div>
+    <div class="tab" onclick="showPage('notes',this)">Notes</div>
   </div>
   <main>
 
@@ -314,17 +317,162 @@ main{padding:24px 28px;max-width:1100px;margin:0 auto}
       </div>
     </div>
 
+    <!-- ══ CAFE INVENTORY ══ -->
+    <div class="page" id="page-cafe-inventory">
+      <div class="card">
+        <div class="card-header">Cafe Inventory</div>
+        <div class="card-body" style="padding-bottom:0">
+          <div class="controls">
+            <input type="date" id="cafe-inv-date">
+            <input type="text" id="cafe-inv-counter" placeholder="Counted by">
+          </div>
+        </div>
+        <div class="inv-section-hdr">Cafe Items</div>
+        <table class="inv-table">
+          <thead><tr><th>Item</th><th>Pack</th><th>PAR</th><th>On Hand</th><th>Order</th><th></th></tr></thead>
+          <tbody id="cafe-inv-body"></tbody>
+        </table>
+        <div class="inv-actions">
+          <button class="btn-sec" onclick="addCafeInvItem()">+ Add Item</button>
+          <button class="btn-save" onclick="saveCafeInventory()">Save Inventory</button>
+          <button class="btn-sec" onclick="clearCafeInventory()">Clear All</button>
+          <span id="cafe-inv-saved" class="saved-msg">✓ Saved</span>
+          <div class="inv-summary">Items to order: <strong id="cafe-order-count">0</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MENUS ══ -->
+    <div class="page" id="page-menus">
+      <div class="card">
+        <div class="card-header">Population Menu — Current 2-Week Rotation</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+            Each item has a dropdown of common substitutes — use it to swap something on the fly
+            (out of stock, last-minute change, etc). Choose <em>"Custom…"</em> to type something not listed.
+            Changes save to <strong>all devices</strong> once you click Save.
+          </p>
+          <div class="controls">
+            <label>Week</label>
+            <select id="pop-menu-week-select" onchange="renderPopMenu()">
+              <option value="0">Week 1</option>
+              <option value="1">Week 2</option>
+            </select>
+            <button class="btn-save" onclick="savePopMenu()">Save Changes</button>
+            <span id="pop-menu-saved" class="saved-msg">✓ Saved</span>
+          </div>
+          <div id="pop-menu-container"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Cafe Menu — Rotating</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+            No cafe menu data has been uploaded yet — this is a placeholder structure.
+            Edit items directly and save; upload the real rotation whenever it's ready.
+          </p>
+          <div class="controls">
+            <label>Week</label>
+            <select id="cafe-menu-week-select" onchange="renderCafeMenu()">
+              <option value="0">Week 1</option>
+              <option value="1">Week 2</option>
+            </select>
+            <button class="btn-save" onclick="saveCafeMenu()">Save Changes</button>
+            <span id="cafe-menu-saved" class="saved-msg">✓ Saved</span>
+          </div>
+          <div id="cafe-menu-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MANAGER NOTES ══ -->
+    <div class="page" id="page-notes">
+      <div class="card">
+        <div class="card-header">Manager Notes — Edits, Requests & Corrections</div>
+        <div class="card-body">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+            Shared log visible to every manager. Use it to flag edits, feature requests,
+            or anything that looks wrong on the site.
+          </p>
+          <div class="controls" style="align-items:flex-start">
+            <input type="text" id="note-name" placeholder="Your name" style="min-width:160px">
+          </div>
+          <textarea id="note-text" placeholder="Write a note..." rows="3"
+            style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;outline:none;margin-bottom:12px;resize:vertical"></textarea>
+          <div style="display:flex;gap:12px;align-items:center;margin-bottom:20px">
+            <button class="btn-save" onclick="addNote()">Add Note</button>
+            <span id="note-saved" class="saved-msg">✓ Saved</span>
+          </div>
+          <table class="log-table">
+            <thead><tr><th style="width:140px">Date</th><th style="width:140px">Name</th><th>Note</th></tr></thead>
+            <tbody id="notes-log"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
 <script>
 const PASSWORD = 'Bessemer';
 
+// ── SHARED DATA LAYER ───────────────────────────────────────────────────────────
+// Set this to your deployed backend URL (see backend/README.md).
+// Until it's set, the site falls back to per-device localStorage automatically.
+const API_BASE = ''; // e.g. 'https://bessemer-backend.onrender.com'
+
+async function dbGet(key, fallback) {
+  if (API_BASE) {
+    try {
+      const res = await fetch(`${API_BASE}/api/data/${encodeURIComponent(key)}`);
+      if (res.ok) {
+        const { value } = await res.json();
+        return value === null || value === undefined ? fallback : value;
+      }
+    } catch (err) {
+      console.warn('dbGet failed, falling back to localStorage:', err);
+    }
+  }
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch { return fallback; }
+}
+
+async function dbSet(key, value) {
+  localStorage.setItem(key, JSON.stringify(value)); // always keep a local copy too
+  if (API_BASE) {
+    try {
+      const res = await fetch(`${API_BASE}/api/data/${encodeURIComponent(key)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value })
+      });
+      return res.ok;
+    } catch (err) {
+      console.warn('dbSet failed, saved locally only:', err);
+      return false;
+    }
+  }
+  return true;
+}
+
 // ── Historical data from spreadsheet ──────────────────────────────────────────
 const HISTORICAL = {"January 6, 2025": {"dates": ["2025-01-06", "2025-01-07", "2025-01-08", "2025-01-09", "2025-01-10", "2025-01-11", "2025-01-12"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "January 13, 2025": {"dates": ["2025-01-13", "2025-01-14", "2025-01-15", "2025-01-16", "2025-01-17", "2025-01-18", "2025-01-19"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "January 20, 2025": {"dates": ["2025-01-20", "2025-01-21", "2025-01-22", "2025-01-23", "2025-01-24", "2025-01-25", "2025-01-26"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "January 27, 2025": {"dates": ["2025-01-27", "2025-01-28", "2025-01-29", "2025-01-30", "2025-01-31", "2025-02-01", "2025-02-02"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 3, 2025": {"dates": ["2025-02-03", "2025-02-04", "2025-02-05", "2025-02-06", "2025-02-07", "2025-02-08", "2025-02-09"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 10, 2025": {"dates": ["2025-02-10", "2025-02-11", "2025-02-12", "2025-02-13", "2025-02-14", "2025-02-15", "2025-02-16"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 17, 2025": {"dates": ["2025-02-17", "2025-02-18", "2025-02-19", "2025-02-20", "2025-02-21", "2025-02-22", "2025-02-23"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 24, 2025": {"dates": ["2025-02-24", "2025-02-25", "2025-02-26", "2025-02-27", "2025-02-28", "2025-03-01", "2025-03-02"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 3, 2025": {"dates": ["2025-03-03", "2025-03-04", "2025-03-05", "2025-03-06", "2025-03-07", "2025-03-08", "2025-03-09"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 10, 2025": {"dates": ["2025-03-10", "2025-03-11", "2025-03-12", "2025-03-13", "2025-03-14", "2025-03-15", "2025-03-16"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 17, 2025": {"dates": ["2025-03-17", "2025-03-18", "2025-03-19", "2025-03-20", "2025-03-21", "2025-03-22", "2025-03-23"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 24, 2025": {"dates": ["2025-03-24", "2025-03-25", "2025-03-26", "2025-03-27", "2025-03-28", "2025-03-29", "2025-03-30"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 31, 2025": {"dates": ["2025-03-31", "2025-04-01", "2025-04-02", "2025-04-03", "2025-04-04", "2025-04-05", "2025-04-06"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 7, 2025": {"dates": ["2025-04-07", "2025-04-08", "2025-04-09", "2025-04-10", "2025-04-11", "2025-04-12", "2025-04-13"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 14, 2025": {"dates": ["2025-04-14", "2025-04-15", "2025-04-16", "2025-04-17", "2025-04-18", "2025-04-19", "2025-04-20"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 21, 2025": {"dates": ["2025-04-21", "2025-04-22", "2025-04-23", "2025-04-24", "2025-04-25", "2025-04-26", "2025-04-27"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 28, 2025": {"dates": ["2025-04-28", "2025-04-29", "2025-04-30", "2025-05-01", "2025-05-02", "2025-05-03", "2025-05-04"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 5, 2025": {"dates": ["2025-05-05", "2025-05-06", "2025-05-07", "2025-05-08", "2025-05-09", "2025-05-10", "2025-05-11"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 12, 2025": {"dates": ["2025-05-12", "2025-05-13", "2025-05-14", "2025-05-15", "2025-05-16", "2025-05-17", "2025-05-18"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 19, 2025": {"dates": ["2025-05-19", "2025-05-20", "2025-05-21", "2025-05-22", "2025-05-23", "2025-05-24", "2025-05-25"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 26, 2025": {"dates": ["2025-05-26", "2025-05-27", "2025-05-28", "2025-05-29", "2025-05-30", "2025-05-31", "2025-06-01"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 2, 2025": {"dates": ["2025-06-02", "2025-06-03", "2025-06-04", "2025-06-05", "2025-06-06", "2025-06-07", "2025-06-08"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 9, 2025": {"dates": ["2025-06-09", "2025-06-10", "2025-06-11", "2025-06-12", "2025-06-13", "2025-06-14", "2025-06-15"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 16, 2025": {"dates": ["2025-06-16", "2025-06-17", "2025-06-18", "2025-06-19", "2025-06-20", "2025-06-21", "2025-06-22"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 23, 2025": {"dates": ["2025-06-23", "2025-06-24", "2025-06-25", "2025-06-26", "2025-06-27", "2025-06-28", "2025-06-29"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 30, 2025": {"dates": ["2025-06-30", "2025-07-01", "2025-07-02", "2025-07-03", "2025-07-04", "2025-07-05", "2025-07-06"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "July 7, 2025": {"dates": ["2025-07-07", "2025-07-08", "2025-07-09", "2025-07-10", "2025-07-11", "2025-07-12", "2025-07-13"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "July 14, 2025": {"dates": ["2025-07-14", "2025-07-15", "2025-07-16", "2025-07-17", "2025-07-18", "2025-07-19", "2025-07-20"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "July 21, 2025": {"dates": ["2025-07-21", "2025-07-22", "2025-07-23", "2025-07-24", "2025-07-25", "2025-07-26", "2025-07-27"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "July 28, 2025": {"dates": ["2025-07-28", "2025-07-29", "2025-07-30", "2025-07-31", "2025-08-01", "2025-08-02", "2025-08-03"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "August 4, 2025": {"dates": ["2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07", "2025-08-08", "2025-08-09", "2025-08-10"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "August 11, 2025": {"dates": ["2025-08-11", "2025-08-12", "2025-08-13", "2025-08-14", "2025-08-15", "2025-08-16", "2025-08-17"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "August 18, 2025": {"dates": ["2025-08-18", "2025-08-19", "2025-08-20", "2025-08-21", "2025-08-22", "2025-08-23", "2025-08-24"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "August 25, 2025": {"dates": ["2025-08-25", "2025-08-26", "2025-08-27", "2025-08-28", "2025-08-29", "2025-08-30", "2025-08-31"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "September 1, 2025": {"dates": ["2025-09-01", "2025-09-02", "2025-09-03", "2025-09-04", "2025-09-05", "2025-09-06", "2025-09-07"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "September 8, 2025": {"dates": ["2025-09-08", "2025-09-09", "2025-09-10", "2025-09-11", "2025-09-12", "2025-09-13", "2025-09-14"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "September 15, 2025": {"dates": ["2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18", "2025-09-19", "2025-09-20", "2025-09-21"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "September 22, 2025": {"dates": ["2025-09-22", "2025-09-23", "2025-09-24", "2025-09-25", "2025-09-26", "2025-09-27", "2025-09-28"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "September 29, 2025": {"dates": ["2025-09-29", "2025-09-30", "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-04", "2025-10-05"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "October 6, 2025": {"dates": ["2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-10-10", "2025-10-11", "2025-10-12"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "October 13, 2025": {"dates": ["2025-10-13", "2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17", "2025-10-18", "2025-10-19"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "October 20, 2025": {"dates": ["2025-10-20", "2025-10-21", "2025-10-22", "2025-10-23", "2025-10-24", "2025-10-25", "2025-10-26"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "October 27, 2025": {"dates": ["2025-10-27", "2025-10-28", "2025-10-29", "2025-10-30", "2025-10-31", "2025-11-01", "2025-11-02"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "November 3, 2025": {"dates": ["2025-11-03", "2025-11-04", "2025-11-05", "2025-11-06", "2025-11-07", "2025-11-08", "2025-11-09"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "November 10, 2025": {"dates": ["2025-11-10", "2025-11-11", "2025-11-12", "2025-11-13", "2025-11-14", "2025-11-15", "2025-11-16"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "November 17, 2025": {"dates": ["2025-11-17", "2025-11-18", "2025-11-19", "2025-11-20", "2025-11-21", "2025-11-22", "2025-11-23"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "November 24, 2025": {"dates": ["2025-11-24", "2025-11-25", "2025-11-26", "2025-11-27", "2025-11-28", "2025-11-29", "2025-11-30"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "December 1, 2025": {"dates": ["2025-12-01", "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-06", "2025-12-07"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "December 8, 2025": {"dates": ["2025-12-08", "2025-12-09", "2025-12-10", "2025-12-11", "2025-12-12", "2025-12-13", "2025-12-14"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "December 15, 2025": {"dates": ["2025-12-15", "2025-12-16", "2025-12-17", "2025-12-18", "2025-12-19", "2025-12-20", "2025-12-21"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "December 22, 2025": {"dates": ["2025-12-22", "2025-12-23", "2025-12-24", "2025-12-25", "2025-12-26", "2025-12-27", "2025-12-28"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "December 29, 2025": {"dates": ["2025-12-29", "2025-12-30", "2025-12-31", "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "January 5, 2026": {"dates": ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-10", "2026-01-11"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "January 12, 2026": {"dates": ["2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-17", "2026-01-18"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "January 19, 2026": {"dates": ["2026-01-19", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-24", "2026-01-25"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "January 26, 2026": {"dates": ["2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-01-31", "2026-02-01"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 2, 2026": {"dates": ["2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-07", "2026-02-08"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 9, 2026": {"dates": ["2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-14", "2026-02-15"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 16, 2026": {"dates": ["2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21", "2026-02-22"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "February 23, 2026": {"dates": ["2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-02-28", "2026-03-01"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 2, 2026": {"dates": ["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-07", "2026-03-08"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 9, 2026": {"dates": ["2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-14", "2026-03-15"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 16, 2026": {"dates": ["2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-21", "2026-03-22"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 23, 2026": {"dates": ["2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-28", "2026-03-29"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "March 30, 2026": {"dates": ["2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03", "2026-04-04", "2026-04-05"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 6, 2026": {"dates": ["2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-11", "2026-04-12"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 13, 2026": {"dates": ["2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-18", "2026-04-19"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 20, 2026": {"dates": ["2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-25", "2026-04-26"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "April 27, 2026": {"dates": ["2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-01", "2026-05-02", "2026-05-03"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 4, 2026": {"dates": ["2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-09", "2026-05-10"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 11, 2026": {"dates": ["2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-16", "2026-05-17"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 18, 2026": {"dates": ["2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "May 25, 2026": {"dates": ["2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 1, 2026": {"dates": ["2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 8, 2026": {"dates": ["2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-13", "2026-06-14"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 15, 2026": {"dates": ["2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-19", "2026-06-20", "2026-06-21"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 22, 2026": {"dates": ["2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-27", "2026-06-28"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "June 29, 2026": {"dates": ["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-04", "2026-07-05"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "July 6, 2026": {"dates": ["2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-11", "2026-07-12"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}, "July 13, 2026": {"dates": ["2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19"], "rows": {"Population": [0, 0, 0, 0, 0, 0, 0], "Booking": [0, 0, 0, 0, 0, 0, 0], "Inmate Workers": [0, 0, 0, 0, 0, 0, 0], "Extra": [0, 0, 0, 0, 0, 0, 0], "Cafe": [0, 0, 0, 0, 0, 0, 0], "Other": [0, 0, 0, 0, 0, 0, 0]}, "totals": {"Population": 0, "Booking": 0, "Inmate Workers": 0, "Extra": 0, "Cafe": 0, "Other": 0}}};
 
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const ROW_KEYS = ['Population','Booking','Inmate Workers','Extra','Cafe','Other'];
+
+// ── Menu data (seeded from Jefferson_County_Menus_Clean.xlsx Weeks 1-2; replace once newer file is provided) ──
+const POP_MENU_SEED = [{"Monday":{"breakfast":["Sausage","Oatmeal","Bread (1 slice)","Fortified Beverage"],"lunch":["Spaghetti w/ Meat Sauce","Northern Beans","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Salami Sandwich","Bread (2 slices)","Mustard","Green Beans","Carrots","Yellow Cake","Fortified Beverage"]},"Tuesday":{"breakfast":["Egg","Grits","Milk","Yellow Cake","Fortified Beverage"],"lunch":["Chicken Tezz","Carrots","White Parboiled Rice","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Turkey Sandwich","Bread (2 slices)","Mustard","Carrots","Pinto Beans","Yellow Cake","Fortified Beverage"]},"Wednesday":{"breakfast":["Sausage","Oatmeal","Bread (1 slice)","Fortified Beverage"],"lunch":["Lasagna","Green Beans","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["PB&J Sandwich","Bread (2 slices)","Jelly","Northern Beans","Yellow Cake","Fortified Beverage"]},"Thursday":{"breakfast":["Egg","Grits","Milk","Yellow Cake","Fortified Beverage"],"lunch":["Red Beans & Rice w/ Chicken","Pinto Beans","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Salami Sandwich","Bread (2 slices)","Mustard","Peas & Carrots","Yellow Cake","Fortified Beverage"]},"Friday":{"breakfast":["Sausage","Oatmeal","Bread (1 slice)","Yellow Cake","Fortified Beverage"],"lunch":["Beef Mac","Mixed Veggies","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Turkey Sandwich","Bread (2 slices)","Mustard","Mashed Potatoes","Pasta Salad","Yellow Cake","Fortified Beverage"]},"Saturday":{"breakfast":["Egg","Grits","Sausage","Yellow Cake","Fortified Beverage"],"lunch":["White Bean Chili","Carrots","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Turkey Sandwich","Bread (2 slices)","Mustard","Pinto Beans","Yellow Cake","Fortified Beverage"]},"Sunday":{"breakfast":["Sausage","Grits","Egg","Yellow Cake","Fortified Beverage"],"lunch":["Chicken & Rice Casserole","Peas & Carrots","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Salami Sandwich","Bread (2 slices)","Mustard","Peas & Carrots","Yellow Cake","Fortified Beverage"]}},{"Monday":{"breakfast":["Sausage","Oatmeal","Bread (1 slice)","Fortified Beverage"],"lunch":["Lasagna","Carrots","Pinto Beans","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Turkey Sandwich","Bread (2 slices)","Mustard","Carrots","Pasta Salad","Yellow Cake","Fortified Beverage"]},"Tuesday":{"breakfast":["Egg","Grits","Milk","Yellow Cake","Fortified Beverage"],"lunch":["Red Beans & Rice w/ Chicken","Peas & Carrots","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Salami Sandwich","Bread (2 slices)","Mustard","Peas & Carrots","Yellow Cake","Fortified Beverage"]},"Wednesday":{"breakfast":["Sausage","Oatmeal","Bread (1 slice)","Fortified Beverage"],"lunch":["White Bean Chili","Green Beans","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["PB&J Sandwich","Bread (2 slices)","Jelly","Green Beans","Yellow Cake","Fortified Beverage"]},"Thursday":{"breakfast":["Egg","Grits","Milk","Yellow Cake","Fortified Beverage"],"lunch":["Cheesy Chicken Mac","Pinto Beans","White Parboiled Rice","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Turkey Sandwich","Bread (2 slices)","Mustard","Northern Beans","Pinto Beans","Yellow Cake","Fortified Beverage"]},"Friday":{"breakfast":["Sausage","Oatmeal","Bread (1 slice)","Yellow Cake","Fortified Beverage"],"lunch":["Beef Stroganoff","Carrots","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Salami Sandwich","Bread (2 slices)","Mustard","Mashed Potatoes","Yellow Cake","Fortified Beverage"]},"Saturday":{"breakfast":["Egg","Grits","Sausage","Yellow Cake","Fortified Beverage"],"lunch":["Spaghetti w/ Meat Sauce","Northern Beans","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["Turkey Sandwich","Bread (2 slices)","Mustard","Pinto Beans","Yellow Cake","Fortified Beverage"]},"Sunday":{"breakfast":["Sausage","Grits","Egg","Yellow Cake","Fortified Beverage"],"lunch":["Beef Mac","Mixed Veggies","Cornbread","Yellow Cake","Fortified Beverage"],"dinner":["PB&J Sandwich","Bread (2 slices)","Jelly","Mixed Veggies","Yellow Cake","Fortified Beverage"]}}];
+const MENU_POOLS = {"breakfast":["Bread (1 slice)","Egg","Fortified Beverage","Grits","Milk","Oatmeal","Sausage","Yellow Cake"],"lunch":["Beef Mac","Beef Stroganoff","Carrots","Cheesy Chicken Mac","Chicken & Rice Casserole","Chicken Tezz","Cornbread","Fortified Beverage","Green Beans","Lasagna","Mashed Potatoes","Mixed Veggies","Northern Beans","Peas & Carrots","Pinto Beans","Red Beans & Rice w/ Chicken","Spaghetti w/ Meat Sauce","White Bean Chili","White Parboiled Rice","Yellow Cake"],"dinner":["Bread (2 slices)","Carrots","Fortified Beverage","Green Beans","Jelly","Mashed Potatoes","Mixed Veggies","Mustard","Northern Beans","PB&J Sandwich","Pasta Salad","Peas & Carrots","Pinto Beans","Salami Sandwich","Turkey Sandwich","Yellow Cake"]};
+
+const CAFE_MENU_SEED = [
+  {Monday:{items:['Item A','Item B']},Tuesday:{items:['Item A','Item B']},Wednesday:{items:['Item A','Item B']},Thursday:{items:['Item A','Item B']},Friday:{items:['Item A','Item B']},Saturday:{items:['Item A','Item B']},Sunday:{items:['Item A','Item B']}},
+  {Monday:{items:['Item A','Item B']},Tuesday:{items:['Item A','Item B']},Wednesday:{items:['Item A','Item B']},Thursday:{items:['Item A','Item B']},Friday:{items:['Item A','Item B']},Saturday:{items:['Item A','Item B']},Sunday:{items:['Item A','Item B']}}
+];
 
 // ── AUTH ──────────────────────────────────────────────────────────────────────
 function doLogin() {
@@ -355,11 +503,11 @@ function showPage(name, el) {
 // ── MEAL COUNTS ───────────────────────────────────────────────────────────────
 let allWeeks = {};
 
-function initCounts() {
+async function initCounts() {
   // Load historical data
   allWeeks = Object.assign({}, HISTORICAL);
-  // Load any saved new weeks
-  const saved = JSON.parse(localStorage.getItem('bessemerWeeks') || '{}');
+  // Load any saved new weeks (shared across devices)
+  const saved = await dbGet('bessemerWeeks', {});
   Object.assign(allWeeks, saved);
 
   // Populate week selector
@@ -434,7 +582,7 @@ function updateTotals() {
   document.getElementById('week-totals').innerHTML = html;
 }
 
-function saveWeekData() {
+async function saveWeekData() {
   const week = document.getElementById('week-select').value;
   if(!allWeeks[week]) allWeeks[week] = {dates:[], rows:{}, totals:{}};
   ROW_KEYS.forEach(key => {
@@ -444,9 +592,9 @@ function saveWeekData() {
       allWeeks[week].rows[key].push(el ? +el.value || 0 : 0);
     });
   });
-  const saved = JSON.parse(localStorage.getItem('bessemerWeeks') || '{}');
+  const saved = await dbGet('bessemerWeeks', {});
   saved[week] = allWeeks[week];
-  localStorage.setItem('bessemerWeeks', JSON.stringify(saved));
+  await dbSet('bessemerWeeks', saved);
   flash('counts-saved');
   renderCountsLog();
 }
@@ -541,7 +689,7 @@ function calcDayTotal() {
   document.getElementById('day-total-val').textContent = '$'+(food+lb+ll+ld).toFixed(2);
 }
 
-function saveCost() {
+async function saveCost() {
   const date = document.getElementById('cost-date').value || today();
   const served = +document.getElementById('cost-served').value||0;
   const rec = {date, served, meals: {}, labor: {b:+document.getElementById('labor-b').value||0,l:+document.getElementById('labor-l').value||0,d:+document.getElementById('labor-d').value||0}, ts:Date.now()};
@@ -549,9 +697,9 @@ function saveCost() {
     let total=0; mealItems[m].forEach(i=>total+=(i.cost||0)*(i.qty||0));
     rec.meals[m] = {items:[...mealItems[m]], total, cpp: served?total/served:0};
   });
-  const log = JSON.parse(localStorage.getItem('costLog')||'[]');
+  const log = await dbGet('costLog', []);
   log.unshift(rec);
-  localStorage.setItem('costLog', JSON.stringify(log.slice(0,60)));
+  await dbSet('costLog', log.slice(0,60));
   renderCostLog();
   flash('cost-saved');
 }
@@ -563,8 +711,8 @@ function clearCost() {
   calcDayTotal();
 }
 
-function renderCostLog() {
-  const log = JSON.parse(localStorage.getItem('costLog')||'[]');
+async function renderCostLog() {
+  const log = await dbGet('costLog', []);
   const tbody = document.getElementById('cost-log');
   if(!log.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">No records yet</td></tr>'; return; }
   tbody.innerHTML = log.slice(0,30).map(r => `
@@ -622,7 +770,7 @@ function invRow(item,pack,par,bd,idx) {
     <td><div class="item-name">${item}</div>${bd?'<div class="item-pack" style="color:var(--green)">Big Daddy — 6-wk PAR</div>':''}</td>
     <td style="font-size:12px;color:var(--muted)">${pack}</td>
     <td><span class="par-val">${par}</span></td>
-    <td><input class="inv-input" type="number" id="inv_${idx}" min="0" step="0.5" placeholder="—" oninput="calcOrder('inv_${idx}',${par})"></td>
+    <td><input class="inv-input" type="number" id="inv_${idx}" min="0" step="0.5" placeholder="—" oninput="calcOrder('inv_${idx}',${par},'order-count','#page-inventory')"></td>
     <td><span class="order-val order-ok" id="ord_inv_${idx}">—</span></td>
   </tr>`;
 }
@@ -634,7 +782,9 @@ function buildInventory() {
   document.getElementById('frozen-body').innerHTML = FROZEN.map(r=>invRow(r[0],r[1],r[2],!!r[3],i++)).join('');
 }
 
-function calcOrder(id,par) {
+function calcOrder(id,par,countEl,scopeSelector) {
+  countEl = countEl || 'order-count';
+  scopeSelector = scopeSelector || '#page-inventory';
   const val = parseFloat(document.getElementById(id).value);
   const span = document.getElementById('ord_'+id);
   if(isNaN(val)) { span.textContent='—'; span.className='order-val order-ok'; }
@@ -644,25 +794,243 @@ function calcOrder(id,par) {
     span.className = 'order-val '+(order>0?'order-needed':'order-ok');
   }
   let n=0;
-  document.querySelectorAll('.order-val.order-needed').forEach(s=>{if(+s.textContent>0)n++;});
-  document.getElementById('order-count').textContent=n;
+  document.querySelectorAll(scopeSelector+' .order-val.order-needed').forEach(s=>{if(+s.textContent>0)n++;});
+  document.getElementById(countEl).textContent=n;
 }
 
-function saveInventory() {
+async function saveInventory() {
   const date = document.getElementById('inv-date').value||today();
   const counter = document.getElementById('inv-counter').value;
   const snap = {date,counter,items:[],ts:Date.now()};
-  document.querySelectorAll('.inv-input').forEach(inp=>snap.items.push(inp.value||''));
-  const logs = JSON.parse(localStorage.getItem('invLog')||'[]');
+  document.querySelectorAll('#page-inventory .inv-input').forEach(inp=>snap.items.push(inp.value||''));
+  const logs = await dbGet('invLog', []);
   logs.unshift(snap);
-  localStorage.setItem('invLog', JSON.stringify(logs.slice(0,12)));
+  await dbSet('invLog', logs.slice(0,12));
   flash('inv-saved');
 }
 
 function clearInventory() {
-  document.querySelectorAll('.inv-input').forEach(inp=>inp.value='');
-  document.querySelectorAll('.order-val').forEach(s=>{s.textContent='—';s.className='order-val order-ok';});
+  document.querySelectorAll('#page-inventory .inv-input').forEach(inp=>inp.value='');
+  document.querySelectorAll('#page-inventory .order-val').forEach(s=>{s.textContent='—';s.className='order-val order-ok';});
   document.getElementById('order-count').textContent=0;
+}
+
+// ── CAFE INVENTORY ────────────────────────────────────────────────────────────
+let cafeInvItems = []; // [{name, pack, par}]
+
+async function initCafeInventory() {
+  cafeInvItems = await dbGet('cafeInventoryItems', []);
+  buildCafeInventory();
+}
+
+function buildCafeInventory() {
+  const tbody = document.getElementById('cafe-inv-body');
+  if(!cafeInvItems.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">No cafe items yet — click "+ Add Item" to start the list.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = cafeInvItems.map((it,idx) => `
+    <tr>
+      <td><div class="item-name">${escapeHtml(it.name)}</div></td>
+      <td style="font-size:12px;color:var(--muted)">${escapeHtml(it.pack||'—')}</td>
+      <td><span class="par-val">${it.par||0}</span></td>
+      <td><input class="inv-input" type="number" id="cafe_inv_${idx}" min="0" step="0.5" placeholder="—" oninput="calcOrder('cafe_inv_${idx}',${it.par||0},'cafe-order-count','#page-cafe-inventory')"></td>
+      <td><span class="order-val order-ok" id="ord_cafe_inv_${idx}">—</span></td>
+      <td><button onclick="removeCafeInvItem(${idx})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:15px">✕</button></td>
+    </tr>`).join('');
+}
+
+function addCafeInvItem() {
+  const name = prompt('Item name:');
+  if(!name || !name.trim()) return;
+  const pack = prompt('Pack size (e.g. "1×50 lb"):') || '';
+  const parRaw = prompt('PAR level (number):');
+  const par = parseFloat(parRaw) || 0;
+  cafeInvItems.push({name: name.trim(), pack: pack.trim(), par});
+  dbSet('cafeInventoryItems', cafeInvItems);
+  buildCafeInventory();
+}
+
+function removeCafeInvItem(idx) {
+  cafeInvItems.splice(idx,1);
+  dbSet('cafeInventoryItems', cafeInvItems);
+  buildCafeInventory();
+}
+
+async function saveCafeInventory() {
+  const date = document.getElementById('cafe-inv-date').value||today();
+  const counter = document.getElementById('cafe-inv-counter').value;
+  const snap = {date,counter,items:[],ts:Date.now()};
+  document.querySelectorAll('#page-cafe-inventory .inv-input').forEach(inp=>snap.items.push(inp.value||''));
+  const logs = await dbGet('cafeInvLog', []);
+  logs.unshift(snap);
+  await dbSet('cafeInvLog', logs.slice(0,12));
+  flash('cafe-inv-saved');
+}
+
+function clearCafeInventory() {
+  document.querySelectorAll('#page-cafe-inventory .inv-input').forEach(inp=>inp.value='');
+  document.querySelectorAll('#page-cafe-inventory .order-val').forEach(s=>{s.textContent='—';s.className='order-val order-ok';});
+  document.getElementById('cafe-order-count').textContent=0;
+}
+
+// ── MENUS ─────────────────────────────────────────────────────────────────────
+const MENU_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+let popMenuData = null;   // [{Monday:{breakfast:[...],lunch:[...],dinner:[...]}, ...}, week2]
+let cafeMenuData = null;  // same shape but with a single 'items' list per day
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function itemSelect(uid, currentVal, pool) {
+  const options = new Set(pool);
+  options.add(currentVal);
+  let html = `<select class="mc-input" id="${uid}" data-prev="${escapeHtml(currentVal)}" onchange="handleMenuSelectChange('${uid}')">`;
+  [...options].sort().forEach(opt => {
+    html += `<option value="${escapeHtml(opt)}" ${opt===currentVal?'selected':''}>${escapeHtml(opt)}</option>`;
+  });
+  html += `<option value="__custom__">Custom…</option></select>`;
+  return html;
+}
+
+function handleMenuSelectChange(uid) {
+  const el = document.getElementById(uid);
+  if(el.value === '__custom__') {
+    const val = prompt('Enter the substitute item:');
+    if(val && val.trim()) {
+      const opt = document.createElement('option');
+      opt.value = val.trim(); opt.textContent = val.trim(); opt.selected = true;
+      el.insertBefore(opt, el.lastElementChild);
+      el.dataset.prev = val.trim();
+    } else {
+      el.value = el.dataset.prev; // revert
+    }
+  } else {
+    el.dataset.prev = el.value;
+  }
+}
+
+async function initMenus() {
+  popMenuData = await dbGet('populationMenu', null);
+  if(!popMenuData) popMenuData = JSON.parse(JSON.stringify(POP_MENU_SEED));
+  cafeMenuData = await dbGet('cafeMenu', null);
+  if(!cafeMenuData) cafeMenuData = JSON.parse(JSON.stringify(CAFE_MENU_SEED));
+  renderPopMenu();
+  renderCafeMenu();
+}
+
+function mealSectionHtml(day, meal, items, pool, prefix) {
+  const label = {breakfast:'🍳 Breakfast', lunch:'🥪 Lunch', dinner:'🍽️ Dinner'}[meal];
+  return `<div class="meal-panel" style="margin-bottom:12px">
+    <div class="meal-panel-hdr ${meal==='breakfast'?'bkfst':meal==='lunch'?'lunch':'dinr'}">${label}</div>
+    <div class="meal-panel-body">
+      ${items.map((it,ii) => `<div class="mc-field">${itemSelect(`${prefix}_${day}_${meal}_${ii}`, it, pool)}</div>`).join('')}
+    </div>
+  </div>`;
+}
+
+function renderPopMenu() {
+  const wk = +document.getElementById('pop-menu-week-select').value;
+  const week = popMenuData[wk];
+  const container = document.getElementById('pop-menu-container');
+  container.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px">` +
+    MENU_DAYS.map(day => {
+      const d = week[day] || {breakfast:[],lunch:[],dinner:[]};
+      return `<div>
+        <div class="row-label" style="margin-bottom:8px">${day}</div>
+        ${mealSectionHtml(day,'breakfast',d.breakfast||[],MENU_POOLS.breakfast,'pm')}
+        ${mealSectionHtml(day,'lunch',d.lunch||[],MENU_POOLS.lunch,'pm')}
+        ${mealSectionHtml(day,'dinner',d.dinner||[],MENU_POOLS.dinner,'pm')}
+      </div>`;
+    }).join('') + `</div>`;
+}
+
+async function savePopMenu() {
+  const wk = +document.getElementById('pop-menu-week-select').value;
+  const week = popMenuData[wk];
+  MENU_DAYS.forEach(day => {
+    ['breakfast','lunch','dinner'].forEach(meal => {
+      const items = week[day] && week[day][meal] ? week[day][meal] : [];
+      const updated = items.map((_, ii) => {
+        const el = document.getElementById(`pm_${day}_${meal}_${ii}`);
+        return el ? el.value : items[ii];
+      });
+      if(!week[day]) week[day] = {breakfast:[],lunch:[],dinner:[]};
+      week[day][meal] = updated;
+    });
+  });
+  await dbSet('populationMenu', popMenuData);
+  flash('pop-menu-saved');
+}
+
+function renderCafeMenu() {
+  const wk = +document.getElementById('cafe-menu-week-select').value;
+  const week = cafeMenuData[wk];
+  const container = document.getElementById('cafe-menu-container');
+  // Build a pool from every item currently anywhere in the cafe menu, so dropdowns offer real alternatives
+  const pool = new Set();
+  cafeMenuData.forEach(w => MENU_DAYS.forEach(d => (w[d]?.items||[]).forEach(i => pool.add(i))));
+  container.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px">` +
+    MENU_DAYS.map(day => {
+      const items = (week[day] && week[day].items) || [];
+      return `<div>
+        <div class="row-label" style="margin-bottom:8px">${day}</div>
+        <div class="meal-panel"><div class="meal-panel-body">
+          ${items.map((it,ii)=>`<div class="mc-field">${itemSelect(`cm_${day}_${ii}`, it, [...pool])}</div>`).join('')}
+        </div></div>
+      </div>`;
+    }).join('') + `</div>`;
+}
+
+async function saveCafeMenu() {
+  const wk = +document.getElementById('cafe-menu-week-select').value;
+  const week = cafeMenuData[wk];
+  MENU_DAYS.forEach(day => {
+    const items = (week[day] && week[day].items) || [];
+    const updated = items.map((_, ii) => {
+      const el = document.getElementById(`cm_${day}_${ii}`);
+      return el ? el.value : items[ii];
+    });
+    if(!week[day]) week[day] = {items:[]};
+    week[day].items = updated;
+  });
+  await dbSet('cafeMenu', cafeMenuData);
+  flash('cafe-menu-saved');
+}
+
+// ── MANAGER NOTES ─────────────────────────────────────────────────────────────
+async function initNotes() {
+  await renderNotes();
+}
+
+async function renderNotes() {
+  const notes = await dbGet('managerNotes', []);
+  const tbody = document.getElementById('notes-log');
+  if(!notes.length) {
+    tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:var(--muted);padding:20px">No notes yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = notes.map(n => `
+    <tr>
+      <td>${escapeHtml(n.date||'')}</td>
+      <td>${escapeHtml(n.name||'—')}</td>
+      <td>${escapeHtml(n.text||'')}</td>
+    </tr>`).join('');
+}
+
+async function addNote() {
+  const nameEl = document.getElementById('note-name');
+  const textEl = document.getElementById('note-text');
+  const name = nameEl.value.trim();
+  const text = textEl.value.trim();
+  if(!text) return;
+  const notes = await dbGet('managerNotes', []);
+  notes.unshift({name: name||'Anonymous', text, date: new Date().toLocaleString(), ts: Date.now()});
+  await dbSet('managerNotes', notes.slice(0,200));
+  textEl.value = '';
+  await renderNotes();
+  flash('note-saved');
 }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
@@ -674,13 +1042,17 @@ function flash(id) {
   setTimeout(()=>el.style.display='none', 2500);
 }
 
-function initApp() {
+async function initApp() {
   document.getElementById('cost-date').value = today();
   document.getElementById('inv-date').value = today();
+  document.getElementById('cafe-inv-date').value = today();
   initCounts();
   buildInventory();
   renderCostLog();
   MEALS.forEach(m => { renderMealItems(m); recalcMeal(m); });
+  initCafeInventory();
+  initMenus();
+  initNotes();
 }
 </script>
 </body>
