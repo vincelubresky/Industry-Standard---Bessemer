@@ -510,6 +510,14 @@ async function initCounts() {
   const saved = await dbGet('bessemerWeeks', {});
   Object.assign(allWeeks, saved);
 
+  // Auto-create any blank weeks between the last known week and the current one
+  const added = ensureUpToCurrentWeek();
+  if (added.length) {
+    const saved2 = await dbGet('bessemerWeeks', {});
+    added.forEach(lbl => saved2[lbl] = allWeeks[lbl]);
+    await dbSet('bessemerWeeks', saved2);
+  }
+
   // Populate week selector
   const sel = document.getElementById('week-select');
   sel.innerHTML = '';
@@ -518,8 +526,67 @@ async function initCounts() {
     opt.value = w; opt.textContent = w;
     sel.appendChild(opt);
   });
+  const currentLabel = formatWeekLabel(mondayOf(new Date()));
+  if (allWeeks[currentLabel]) sel.value = currentLabel;
   loadWeek();
   renderCountsLog();
+}
+
+// Returns the Monday (local midnight) of the week containing the given date.
+function mondayOf(date) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diff = (day === 0 ? -6 : 1 - day);
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+
+function formatWeekLabel(d) {
+  return d.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+}
+
+function isoDate(d) { return d.toISOString().split('T')[0]; }
+
+function makeBlankWeek(mondayDate) {
+  const dates = [];
+  for (let i=0;i<7;i++) {
+    const dd = new Date(mondayDate);
+    dd.setDate(dd.getDate()+i);
+    dates.push(isoDate(dd));
+  }
+  return {
+    dates,
+    rows: Object.fromEntries(ROW_KEYS.map(k=>[k,Array(7).fill(0)])),
+    totals: Object.fromEntries(ROW_KEYS.map(k=>[k,0]))
+  };
+}
+
+// Fills in any missing weeks (as blank/zeroed) from the last known week up
+// through the week containing today, so the site is always current without
+// anyone having to click "+ New Week" manually.
+function ensureUpToCurrentWeek() {
+  const added = [];
+  let latestMonday = null;
+  Object.values(allWeeks).forEach(w => {
+    if (w.dates && w.dates[0]) {
+      const d = new Date(w.dates[0]+'T00:00:00');
+      if (!latestMonday || d > latestMonday) latestMonday = d;
+    }
+  });
+  const nowMonday = mondayOf(new Date());
+  if (!latestMonday) latestMonday = nowMonday;
+  let cur = new Date(latestMonday);
+  cur.setDate(cur.getDate()+7);
+  while (cur <= nowMonday) {
+    const label = formatWeekLabel(cur);
+    if (!allWeeks[label]) {
+      allWeeks[label] = makeBlankWeek(cur);
+      added.push(label);
+    }
+    cur.setDate(cur.getDate()+7);
+  }
+  return added;
 }
 
 function loadWeek() {
